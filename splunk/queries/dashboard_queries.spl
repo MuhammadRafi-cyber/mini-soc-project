@@ -1,43 +1,94 @@
-===================================================================
-SPL QUERIES FOR 9 DASHBOARD PANELS
-===================================================================
+# ==============================================================================
+# BERKAS SUMBER: mini-soc-project/splunk/queries/dashboard_queries.spl
+# DESKRIPSI: Kumpulan Rumus SPL (Search Processing Language) untuk Panel Dashboard
+# TUGAS UAS: Keamanan Jaringan - Mini SOC Project
+# LINGKUNGAN LAB: Splunk Enterprise + MikroTik CHR + Kali Linux
+# ==============================================================================
 
--- PANEL 1: Top Attacker IP --
-index=mikrotik src_ip=* | stats count by src_ip 
-| sort -count 
+# ------------------------------------------------------------------------------
+# PANEL 1: Top Attacker IP
+# Deskripsi: Mengidentifikasi 10 alamat IP penyerang paling aktif di jaringan.
+# Visualisasi Terbaik: Bar Chart (Horizontal) atau Pie Chart.
+# ------------------------------------------------------------------------------
+index=mikrotik src_ip=*
+| stats count by src_ip
+| sort -count
 | head 10
 
--- PANEL 2: Top Destination Port --
-index=mikrotik dst_port=* | stats count by dst_port 
-| sort -count 
+
+# ------------------------------------------------------------------------------
+# PANEL 2: Top Destination Port
+# Deskripsi: Mengetahui port-port layanan router yang paling sering dipindai/diserang.
+# Visualisasi Terbaik: Column Chart (Vertical).
+# ------------------------------------------------------------------------------
+index=mikrotik dst_port=*
+| stats count by dst_port
+| sort -count
 | head 10
 
--- PANEL 3: Firewall Drop Events --
-index=mikrotik alert_type=*DROP* OR alert_type=*BLOCKED* OR alert_type=*VIOLATION* | timechart span=5m count by alert_type
 
--- PANEL 4: Login Failure (SSH & Progressive Blacklist) --
+# ------------------------------------------------------------------------------
+# PANEL 3: Firewall Drop Events
+# Deskripsi: Tren akumulasi pemblokiran paket oleh aturan drop firewall per 5 menit.
+# Visualisasi Terbaik: Line Chart atau Area Chart (Stacked).
+# ------------------------------------------------------------------------------
+index=mikrotik alert_type=*DROP* OR alert_type=*BLOCKED* OR alert_type=*VIOLATION*
+| timechart span=5m count by alert_type
+
+
+# ------------------------------------------------------------------------------
+# PANEL 4: Login Failure (SSH)
+# Deskripsi: Audit keamanan khusus aktivitas brute force/blokir pada port 22 (SSH).
+# Visualisasi Terbaik: Bar Chart atau Single Value Card (Total Logins Blocked).
+# ------------------------------------------------------------------------------
 index=mikrotik ("failed" OR "BRUTEFORCE" OR "PORT-SCAN-BLOCKED") dst_port=22
 | stats count by src_ip
 | sort -count
 
--- PANEL 5: Timeline Serangan (Overview Multi-Series) --
-index=mikrotik alert_type=* | timechart span=1m count by alert_type
 
--- PANEL 6: ICMP Flood Timeline --
-index=mikrotik alert_type="ICMP-FLOOD-DETECTED"
+# ------------------------------------------------------------------------------
+# PANEL 5: Timeline Serangan (Overview Matrix)
+# Deskripsi: Navigasi kronologis multi-series dari seluruh jenis insiden lab SOC.
+# Visualisasi Terbaik: Line Chart (Multi-Series Timeline).
+# ------------------------------------------------------------------------------
+index=mikrotik alert_type=*
+| timechart span=1m count by alert_type
+
+
+# ------------------------------------------------------------------------------
+# PANEL 6: ICMP Flood Timeline
+# Deskripsi: Grafik real-time lonjakan paket banjir ping dari Kali Linux.
+# Visualisasi Terbaik: Area Chart.
+# ------------------------------------------------------------------------------
+index=mikrotik alert_type="ICMP-FLOOD-DETECTED" "firewall,info"
 | timechart span=10s count by src_ip
 
--- PANEL 7: Top ICMP Flood Source --
-index=mikrotik alert_type="ICMP-FLOOD-DETECTED"
+
+# ------------------------------------------------------------------------------
+# PANEL 7: Top ICMP Flood Source
+# Deskripsi: Tabel forensik penghitung total volume paket banjir ICMP per IP asal.
+# Visualisasi Terbaik: Table.
+# ------------------------------------------------------------------------------
+index=mikrotik alert_type="ICMP-FLOOD-DETECTED" "firewall,info"
 | stats count as total_packets by src_ip
 | sort -total_packets
 
--- PANEL 8: Connection to Disabled Service --
+
+# ------------------------------------------------------------------------------
+# PANEL 8: Connection to Disabled Service
+# Deskripsi: Audit pelanggaran kebijakan akses port manajemen nonaktif (Telnet, FTP, WWW, API, Winbox).
+# Visualisasi Terbaik: Stacked Column Chart atau Data Table.
+# ------------------------------------------------------------------------------
 index=mikrotik alert_type IN ("FW-VIOLATION-TELNET", "FW-VIOLATION-FTP", "FW-VIOLATION-WWW", "FW-VIOLATION-API", "FW-VIOLATION-WINBOX")
 | stats count by src_ip, dst_port, alert_type
 | sort -count
 
--- PANEL 9: Attack Category Breakdown (MITRE-Style) --
+
+# ------------------------------------------------------------------------------
+# PANEL 9: Attack Category Breakdown
+# Deskripsi: Klasifikasi taktik serangan berdasarkan rumpun ancaman mirip kerangka MITRE ATT&CK.
+# Visualisasi Terbaik: Pie Chart atau Doughnut Chart.
+# ------------------------------------------------------------------------------
 index=mikrotik alert_type=*
 | eval attack_category=case(
     alert_type IN ("PORT-SCAN-DETECTED","PORT-SCAN-BLOCKED"), "Reconnaissance",
@@ -49,3 +100,31 @@ index=mikrotik alert_type=*
 )
 | stats count by attack_category
 | sort -count
+
+
+# ==============================================================================
+# PANEL TAMBAHAN: TINGKAT KERENTANAN DINAMIS & RISK SCORING (FASE 11 REVISI)
+# Catatan: Membutuhkan search macro `get_severity` yang sudah aktif di Splunk.
+# ==============================================================================
+
+# PANEL 10: Severity Distribution
+# Deskripsi: Proporsi tingkat bahaya serangan (Low, Medium, High) secara real-time.
+# Visualisasi Terbaik: Pie Chart.
+index=mikrotik alert_type=*
+| `get_severity`
+| stats count by severity
+
+# PANEL 11: Host Risk Score Matrix
+# Deskripsi: Tabel kalkulasi tingkat ancaman penyerang berdasarkan bobot akumulasi nilai risiko.
+# Visualisasi Terbaik: Table (Dengan conditional formatting warna LOW/MEDIUM/HIGH/CRITICAL).
+index=mikrotik alert_type=*
+| `get_severity`
+| stats sum(risk_score) as total_risk_score, dc(alert_type) as jenis_serangan, count as total_event by src_ip
+| eval risk_level=case(
+    total_risk_score>=30, "CRITICAL",
+    total_risk_score>=16, "HIGH",
+    total_risk_score>=6, "MEDIUM",
+    total_risk_score<6, "LOW"
+)
+| sort -total_risk_score
+| table src_ip, total_event, jenis_serangan, total_risk_score, risk_level
