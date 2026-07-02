@@ -1,0 +1,51 @@
+===================================================================
+SPL QUERIES FOR 9 DASHBOARD PANELS
+===================================================================
+
+-- PANEL 1: Top Attacker IP --
+index=mikrotik src_ip=* | stats count by src_ip 
+| sort -count 
+| head 10
+
+-- PANEL 2: Top Destination Port --
+index=mikrotik dst_port=* | stats count by dst_port 
+| sort -count 
+| head 10
+
+-- PANEL 3: Firewall Drop Events --
+index=mikrotik alert_type=*DROP* OR alert_type=*BLOCKED* OR alert_type=*VIOLATION* | timechart span=5m count by alert_type
+
+-- PANEL 4: Login Failure (SSH & Progressive Blacklist) --
+index=mikrotik ("failed" OR "BRUTEFORCE" OR "PORT-SCAN-BLOCKED") dst_port=22
+| stats count by src_ip
+| sort -count
+
+-- PANEL 5: Timeline Serangan (Overview Multi-Series) --
+index=mikrotik alert_type=* | timechart span=1m count by alert_type
+
+-- PANEL 6: ICMP Flood Timeline --
+index=mikrotik alert_type="ICMP-FLOOD-DETECTED"
+| timechart span=10s count by src_ip
+
+-- PANEL 7: Top ICMP Flood Source --
+index=mikrotik alert_type="ICMP-FLOOD-DETECTED"
+| stats count as total_packets by src_ip
+| sort -total_packets
+
+-- PANEL 8: Connection to Disabled Service --
+index=mikrotik alert_type IN ("FW-VIOLATION-TELNET", "FW-VIOLATION-FTP", "FW-VIOLATION-WWW", "FW-VIOLATION-API", "FW-VIOLATION-WINBOX")
+| stats count by src_ip, dst_port, alert_type
+| sort -count
+
+-- PANEL 9: Attack Category Breakdown (MITRE-Style) --
+index=mikrotik alert_type=*
+| eval attack_category=case(
+    alert_type IN ("PORT-SCAN-DETECTED","PORT-SCAN-BLOCKED"), "Reconnaissance",
+    alert_type IN ("SSH-BRUTEFORCE-DETECTED","SSH-BRUTEFORCE-BLOCKED"), "Brute Force",
+    alert_type IN ("ICMP-FLOOD-DETECTED"), "Denial of Service",
+    alert_type IN ("FW-VIOLATION-TELNET","FW-VIOLATION-FTP","FW-VIOLATION-WWW","FW-VIOLATION-API","FW-VIOLATION-WINBOX"), "Policy Violation",
+    alert_type IN ("FW-DEFAULT-DROP"), "Unclassified/Other",
+    1=1, "Other"
+)
+| stats count by attack_category
+| sort -count
