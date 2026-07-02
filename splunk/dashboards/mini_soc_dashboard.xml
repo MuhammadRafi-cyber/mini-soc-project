@@ -1,0 +1,172 @@
+<dashboard version="1.1" theme="dark">
+  <label>Mini SOC Security Operations Dashboard</label>
+  <description>Real-Time Infrastructure Protection &amp; Risk Scoring Framework (MikroTik CHR Perimeter Log Source)</description>
+  
+  <fieldset submitButton="false">
+    <input type="time" token="time_tok" searchWhenChanged="true">
+      <label>Time Range Selection</label>
+      <default>
+        <earliest>0</earliest>
+        <latest></latest>
+      </default>
+    </input>
+  </fieldset>
+
+  <row>
+    <panel>
+      <chart>
+        <title>1. Top Attacker IP (Reconnaissance &amp; Volumetric)</title>
+        <search>
+          <query>index=mikrotik src_ip=* | stats count by src_ip | sort -count | head 10</query>
+          <earliest>$time_tok.earliest$</earliest>
+          <latest>$time_tok.latest$</latest>
+        </search>
+        <option name="charting.chart">bar</option>
+        <option name="charting.chart.stackMode">none</option>
+        <option name="charting.drilldown">none</option>
+        <option name="charting.legend.placement">right</option>
+      </chart>
+    </panel>
+    
+    <panel>
+      <chart>
+        <title>2. Top Destination Port Targets</title>
+        <search>
+          <query>index=mikrotik dst_port=* | stats count by dst_port | sort -count | head 10</query>
+          <earliest>$time_tok.earliest$</earliest>
+          <latest>$time_tok.latest$</latest>
+        </search>
+        <option name="charting.chart">column</option>
+        <option name="charting.drilldown">none</option>
+        <option name="charting.legend.placement">none</option>
+      </chart>
+    </panel>
+
+    <panel>
+      <chart>
+        <title>3. Global Attack Category Breakdown (MITRE Alignment)</title>
+        <search>
+          <query>index=mikrotik alert_type=* | eval attack_category=case(
+    alert_type IN ("PORT-SCAN-DETECTED","PORT-SCAN-BLOCKED"), "Reconnaissance",
+    alert_type IN ("SSH-BRUTEFORCE-DETECTED","SSH-BRUTEFORCE-BLOCKED"), "Brute Force",
+    alert_type IN ("ICMP-FLOOD-DETECTED"), "Denial of Service",
+    alert_type IN ("FW-VIOLATION-TELNET","FW-VIOLATION-FTP","FW-VIOLATION-WWW","FW-VIOLATION-API","FW-VIOLATION-WINBOX"), "Policy Violation",
+    alert_type IN ("FW-DEFAULT-DROP"), "Unclassified/Other",
+    1=1, "Other"
+)
+| stats count by attack_category | sort -count</query>
+          <earliest>$time_tok.earliest$</earliest>
+          <latest>$time_tok.latest$</latest>
+        </search>
+        <option name="charting.chart">pie</option>
+        <option name="charting.drilldown">none</option>
+      </chart>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <chart>
+        <title>4. Global Security Incident Timeline (Overview Multi-Series)</title>
+        <search>
+          <query>index=mikrotik alert_type=* | timechart span=1m count by alert_type</query>
+          <earliest>$time_tok.earliest$</earliest>
+          <latest>$time_tok.latest$</latest>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="charting.chart.nullValueMode">zero</option>
+        <option name="charting.drilldown">none</option>
+      </chart>
+    </panel>
+    
+    <panel>
+      <chart>
+        <title>5. Firewall Aggregated Drop &amp; Block Events Trend</title>
+        <search>
+          <query>index=mikrotik alert_type=*DROP* OR alert_type=*BLOCKED* OR alert_type=*VIOLATION* | timechart span=5m count by alert_type</query>
+          <earliest>$time_tok.earliest$</earliest>
+          <latest>$time_tok.latest$</latest>
+        </search>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.nullValueMode">zero</option>
+        <option name="charting.chart.stackMode">stacked</option>
+        <option name="charting.drilldown">none</option>
+      </chart>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <chart>
+        <title>6. SSH Credential Access Brute Force Matrix (Port 22)</title>
+        <search>
+          <query>index=mikrotik ("failed" OR "BRUTEFORCE" OR "PORT-SCAN-BLOCKED") dst_port=22 | stats count by src_ip | sort -count</query>
+          <earliest>$time_tok.earliest$</earliest>
+          <latest>$time_tok.latest$</latest>
+        </search>
+        <option name="charting.chart">bar</option>
+        <option name="charting.drilldown">none</option>
+        <option name="charting.legend.placement">none</option>
+      </chart>
+    </panel>
+
+    <panel>
+      <chart>
+        <title>7. ICMP Network Flooding Activity Timeline</title>
+        <search>
+          <query>index=mikrotik alert_type="ICMP-FLOOD-DETECTED" "firewall,info" | timechart span=10s count by src_ip</query>
+          <earliest>$time_tok.earliest$</earliest>
+          <latest>$time_tok.latest$</latest>
+        </search>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.nullValueMode">zero</option>
+        <option name="charting.drilldown">none</option>
+      </chart>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <table>
+        <title>8. Connection Attempts to Disabled/Unauthorized Services</title>
+        <search>
+          <query>index=mikrotik alert_type IN ("FW-VIOLATION-TELNET", "FW-VIOLATION-FTP", "FW-VIOLATION-WWW", "FW-VIOLATION-API", "FW-VIOLATION-WINBOX")
+| stats count by src_ip, dst_port, alert_type
+| sort -count</query>
+          <earliest>$time_tok.earliest$</earliest>
+          <latest>$time_tok.latest$</latest>
+        </search>
+        <option name="count">10</option>
+        <option name="drilldown">none</option>
+        <option name="refresh.display">progressbar</option>
+      </table>
+    </panel>
+
+    <panel>
+      <table>
+        <title>9. Host Risk Score Metric &amp; Vulnerability Level (Live Dynamic Scoring)</title>
+        <search>
+          <query>index=mikrotik alert_type=* | `get_severity` 
+| stats sum(risk_score) as total_risk_score, dc(alert_type) as jenis_serangan, count as total_event by src_ip
+| eval risk_level=case(
+    total_risk_score&gt;=30, "CRITICAL",
+    total_risk_score&gt;=16, "HIGH",
+    total_risk_score&gt;=6, "MEDIUM",
+    total_risk_score&lt;6, "LOW"
+)
+| sort -total_risk_score
+| table src_ip, total_event, jenis_serangan, total_risk_score, risk_level</query>
+          <earliest>$time_tok.earliest$</earliest>
+          <latest>$time_tok.latest$</latest>
+        </search>
+        <option name="count">10</option>
+        <option name="drilldown">none</option>
+        <option name="refresh.display">progressbar</option>
+        
+        <format type="color" field="risk_level">
+          <colorPalette type="map">{"LOW":#53A051,"MEDIUM":#F8BE34,"HIGH":#F1813F,"CRITICAL":#DC4E41}</colorPalette>
+        </format>
+      </table>
+    </panel>
+  </row>
+</dashboard>
