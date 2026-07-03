@@ -1,0 +1,37 @@
+# Splunk
+*.log
+splunk/data/
+*.spl.bak
+
+# Credentials & Sensitive
+*.password
+*.secret
+credentials.txt
+*.pem
+*.key
+
+# OS Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# VMware
+*.vmdk
+*.vmx
+*.vmxf
+*.nvram
+*.vmsd
+*.vmsn
+*.vmem
+
+# Temporary
+*.tmp
+*.bak
+*~
+.idea/
+.vscode/
+
+# Large files
+*.ova
+*.iso
+rockyou.txt
